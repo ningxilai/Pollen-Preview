@@ -33,28 +33,27 @@
   :group 'pollen-preview)
 
 (defvar pollen-preview--ts-path nil)
+
 (defvar pollen-preview--port nil)
 (defvar pollen-preview--root nil)
 (defvar pollen-preview--pending nil)
+(defvar pollen-preview--deno-port nil)
+(defvar pollen-preview--emacs-port nil)
+(defvar pollen-preview--emacs-server nil)
+(defvar pollen-preview--deno-process nil)
+(defvar pollen-preview--active-buffers nil)
 
 (defvar-local pollen-preview--active nil)
 (defvar-local pollen-preview--syncing nil)
-(defvar-local pollen-preview--emacs-port nil)
-(defvar-local pollen-preview--deno-port nil)
-
-(defvar pollen-preview--active-buffers nil)
-(defvar pollen-preview--emacs-server nil)
-(defvar pollen-preview--deno-socket nil)
-(defvar pollen-preview--deno-process nil)
+(defvar-local pollen-preview--sync-timer nil)
 
 (defun pollen-preview--ts ()
   (or pollen-preview--ts-path
-      (setq pollen-preview--ts-path
-            (expand-file-name "pollen-preview.ts"
-                              (file-name-directory
-                               (or (and load-file-name (file-name-directory load-file-name))
-                                   (locate-library "pollen-preview")
-                                   buffer-file-name))))))
+      (expand-file-name "pollen-preview.ts"
+                        (or (and load-file-name (file-name-directory load-file-name))
+                            (and (locate-library "pollen-preview")
+                                 (file-name-directory (locate-library "pollen-preview")))
+                            (and buffer-file-name (file-name-directory buffer-file-name))))))
 
 (defun pollen-preview--pollen-file-p (&optional buf)
   (let ((f (buffer-file-name buf)))
@@ -83,8 +82,6 @@
    ((fboundp 'browse-url-default-browser)
     (browse-url-default-browser url))
    (t (browse-url url))))
-
-(defvar-local pollen-preview--sync-timer nil)
 
 (defun pollen-preview--sync (&rest _)
   (when (and pollen-preview--active
@@ -174,7 +171,7 @@
                              "pollen-preview" (format "%s" deno-port) (format "%s" emacs-port))))
 
       (set-process-sentinel pollen-preview--deno-process
-                            (lambda (proc event)
+                             (lambda (_proc event)
                               (message "[pollen-preview] Deno: %s" (string-trim event))))
 
       (setq pollen-preview--pending
