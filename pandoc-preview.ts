@@ -1,13 +1,11 @@
-import { join, basename } from "https://deno.land/std/path/mod.ts"
+import { join, basename, extname } from "https://deno.land/std/path/mod.ts"
 import { ensureDir, ensureSymlink } from "https://deno.land/std/fs/mod.ts"
 
-const appName = Deno.args[0]
 const denoPort = parseInt(Deno.args[1])
 const emacsPort = parseInt(Deno.args[2])
 
-// tmpfs temp dir — lives in RAM, auto-cleaned on reboot
 const globalTmp = "/dev/shm"
-const sessionDir = join(globalTmp, `pollen-preview-${Deno.pid}`)
+const sessionDir = join(globalTmp, `preview-${Deno.pid}`)
 
 const server = Deno.serve({ port: denoPort, hostname: "127.0.0.1" }, (req) => {
   if (req.headers.get("upgrade") !== "websocket") return new Response("no", { status: 400 })
@@ -24,6 +22,8 @@ let toEmacsWs: WebSocket | null = null
 
 let tempDir = ""
 let rootDir = ""
+let filePath = ""
+let backend = ""
 let httpPort = 0
 let renderTimer: number | null = null
 let rendering = false
@@ -49,6 +49,8 @@ async function messageDispatcher(message: string) {
     switch (cmd) {
       case "start": {
         rootDir = args[0]
+        filePath = args[1]
+        backend = args[2]
         const hash = Array.from(
           new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(rootDir)))
         ).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 12)
@@ -56,7 +58,6 @@ async function messageDispatcher(message: string) {
         await ensureDir(tempDir)
         await symlinkProject()
         try { await Deno.remove(join(tempDir, "compiled"), { recursive: true }) } catch {}
-        // Initial render before starting server
         await doRender()
         startWatcher()
         await startHttpServer()
@@ -65,68 +66,74 @@ async function messageDispatcher(message: string) {
       case "sync": {
         const path: string = args[0]
         const content: string = args[1]
-        await writeAndRender(path, content)
+        const name = basename(path)
+        const target = join(tempDir, name)
+        try { await Deno.remove(target) } catch {}
+        await Deno.writeTextFile(target, content)
+        scheduleRender()
         break
       }
       case "stop": {
         if (watcher) { watcher.close(); watcher = null }
-        // Clean up tmpfs session dir
         try { await Deno.remove(sessionDir, { recursive: true }) } catch {}
         break
       }
     }
-  } catch (e) {
-    console.error('[pollen-preview] error:', e)
-  }
+  } catch {}
 }
 
 async function symlinkProject() {
   for await (const entry of Deno.readDir(rootDir)) {
-    if (entry.name === ".pollen-preview" || entry.name.startsWith(".")) continue
+    if (entry.name.startsWith(".")) continue
     try {
-      await ensureSymlink(
-        join(rootDir, entry.name),
-        join(tempDir, entry.name)
-      )
+      await ensureSymlink(join(rootDir, entry.name), join(tempDir, entry.name))
     } catch {}
   }
-}
-
-async function writeAndRender(filePath: string, content: string) {
-  const name = basename(filePath)
-  const target = join(tempDir, name)
-  try { await Deno.remove(target) } catch {}
-  await Deno.writeTextFile(target, content)
-  scheduleRender()
 }
 
 function scheduleRender() {
   if (renderTimer !== null) clearTimeout(renderTimer)
   renderTimer = setTimeout(() => {
-    if (rendering) {
-      renderPending = true
-    } else {
-      doRender()
-    }
-  }, 400)
+    if (rendering) { renderPending = true } else { doRender() }
+  }, 300)
 }
 
 async function doRender() {
   rendering = true
   renderPending = false
   try {
-    // Clean Pollen cache before render to avoid stale data
-    try { await Deno.remove(join(tempDir, "compiled"), { recursive: true }) } catch {}
-    const cmd = new Deno.Command("raco", {
-      args: ["pollen", "render", "--"],
-      cwd: tempDir,
-      stdout: "null",
-      stderr: "piped",
-    })
+    const name = basename(filePath)
+    let cmd: Deno.Command
+
+    if (backend === "pollen") {
+      try { await Deno.remove(join(tempDir, "compiled"), { recursive: true }) } catch {}
+      cmd = new Deno.Command("raco", {
+        args: ["pollen", "render"],
+        cwd: tempDir, stdout: "piped", stderr: "piped",
+      })
+    } else if (backend.startsWith("pandoc-")) {
+      const fmt = backend.slice(7)
+      const outName = name.replace(/\.\w+$/, ".html")
+      cmd = new Deno.Command("pandoc", {
+        args: [name, "-f", fmt, "-t", "html5", "--standalone",
+               "--mathjax", "--highlight-style=tango",
+               "-o", outName],
+        cwd: tempDir, stdout: "piped", stderr: "piped",
+      })
+    } else if (backend === "typst") {
+      const outName = name.replace(/\.\w+$/, ".html")
+      cmd = new Deno.Command("typst", {
+        args: ["compile", name, outName],
+        cwd: tempDir, stdout: "piped", stderr: "piped",
+      })
+    } else {
+      return
+    }
+
     const { success, stderr } = await cmd.output()
     if (!success) {
       const err = new TextDecoder().decode(stderr).trim()
-      evalInEmacs(`(message "[pollen-preview] %s" ${JSON.stringify(err.split("\n").pop())})`)
+      evalInEmacs(`(message "[preview] %s" ${JSON.stringify(err.split("\n").pop())})`)
     } else {
       renderVersion++
       await Deno.writeTextFile(join(tempDir, ".render-version"), String(renderVersion))
@@ -136,16 +143,17 @@ async function doRender() {
   if (renderPending) doRender()
 }
 
+const watchRx = /\.(pm|pmd|pp|ptree|rkt|md|markdown|org|rst|tex|latex|adoc|asciidoc|typ)$/
+
 function startWatcher() {
-  const pollenRx = /\.(pm|pmd|pp|ptree|rkt)$/
   try {
     watcher = Deno.watchFs(rootDir)
     ;(async () => {
       for await (const event of watcher!) {
         if (event.kind === "modify" || event.kind === "create") {
-          if (event.paths.some((p) => pollenRx.test(p) && !p.includes(".pollen-preview"))) {
+          if (event.paths.some((p) => watchRx.test(p) && !p.includes("/."))) {
             for (const p of event.paths) {
-              if (pollenRx.test(p) && !p.includes(".pollen-preview")) {
+              if (watchRx.test(p) && !p.includes("/.")) {
                 try {
                   const content = await Deno.readTextFile(p)
                   const target = join(tempDir, basename(p))
@@ -165,22 +173,20 @@ function startWatcher() {
 async function startHttpServer() {
   const httpServer = Deno.serve({ port: 0, hostname: "127.0.0.1" }, handler)
   httpPort = httpServer.addr.port
-  console.error(`[pollen-preview] HTTP :${httpPort}`)
-  evalInEmacs(`(pollen-preview--server-ready ${httpPort})`)
+  evalInEmacs(`(pandoc-preview--server-ready ${httpPort})`)
 }
 
 const RELOAD_SCRIPT = `<script>
 (function(){
   var v=0;
   function check(){
-    fetch('/__pollen_version?_='+Date.now())
+    fetch('/__preview_version?_='+Date.now())
       .then(function(r){return r.text()})
       .then(function(t){
         var n=parseInt(t);
         if(v===0){v=n;return}
         if(n>v){location.reload()}
-      })
-      .catch(function(){});
+      }).catch(function(){});
   }
   setInterval(check,200);
 })();
@@ -190,22 +196,23 @@ async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname
 
-  if (path === "/__pollen_version") {
+  if (path === "/__preview_version") {
     return new Response(String(renderVersion), {
       headers: { "Cache-Control": "no-cache" },
     })
   }
 
+  const base = basename(filePath).replace(/\.\w+$/, "")
   const candidates = path === "/"
-    ? ["index.html", "index"]
+    ? [`${base}.html`, base, "index.html", "index"]
     : path.endsWith(".html")
       ? [path, path.slice(0, -5)]
       : [path, path + ".html"]
 
   for (const c of candidates) {
-    const filePath = join(tempDir, c)
+    const fp = join(tempDir, c)
     try {
-      let content = await Deno.readTextFile(filePath)
+      let content = await Deno.readTextFile(fp)
       const isHtml = c.endsWith(".html") || !c.includes(".")
       if (isHtml) {
         content = content.replace(/<\/?root>/g, "")
