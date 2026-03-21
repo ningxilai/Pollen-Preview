@@ -1,7 +1,7 @@
 ;;; pandoc-preview.el --- Live preview for documents via browser -*- lexical-binding: t; -*-
 
 ;; Version: 0.1
-;; Package-Requires: ((emacs "28.1") (websocket "1.15"))
+;; Package-Requires: ((emacs "28.1") (websocket "1.15") (deno-briage "0.1"))
 ;; Keywords: preview, pandoc, pollen, markdown
 
 ;;; Commentary:
@@ -14,6 +14,7 @@
 ;;; Code:
 
 (require 'websocket)
+(require 'deno-bridge)
 (require 'json)
 (require 'cl-lib)
 (require 'project)
