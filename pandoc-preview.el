@@ -1,4 +1,4 @@
-;;; pandoc-preview.el --- Live preview for documents via browser -*- lexical-binding: t; -*-
+;;; pandoc-preview.el --- Live preview for documents via browser -*- lexical-binding: t; byte-compile-warnings: nil; -*-
 
 ;; Version: 0.4
 ;; Package-Requires: ((emacs "28.1") (deno-bridge "0.1"))
@@ -17,10 +17,7 @@
 
 ;;; Code:
 
-;; Suppress warnings from deno-bridge
-(defvar emacs-conductor-enable-debug)
-(let ((byte-compile-warnings nil))
-  (require 'deno-bridge))
+(require 'deno-bridge)
 (require 'json)
 (require 'cl-lib)
 (require 'project)
@@ -185,21 +182,6 @@ Returns a list of lists, each inner list is (EXE ARG...)."
     (remove-hook 'after-change-functions #'pandoc-preview--sync t)
     (remove-hook 'kill-buffer-hook #'pandoc-preview--buffer-killed t)))
 
-(defun pandoc-preview--wait-for-connection (timeout)
-  "Wait up to TIMEOUT seconds for deno-bridge connection to be established."
-  (let ((client-sym (intern-soft "deno-bridge-client-pandoc-preview"))
-        (deadline (+ (float-time) timeout)))
-    (while (and (< (float-time) deadline)
-                (or (null client-sym)
-                    (null (symbol-value client-sym))
-                    (not (eq (websocket-ready-state (symbol-value client-sym)) 'open))))
-      (sleep-for 0.05)
-      (setq client-sym (intern-soft "deno-bridge-client-pandoc-preview")))
-    (when (or (null client-sym)
-              (null (symbol-value client-sym))
-              (not (eq (websocket-ready-state (symbol-value client-sym)) 'open)))
-      (error "[pandoc-preview] Deno bridge connection timeout"))))
-
 ;;; Deno callback functions
 
 (defun pandoc-preview--on-server-ready (port)
@@ -234,9 +216,8 @@ Returns a list of lists, each inner list is (EXE ARG...)."
              (file-abs (expand-file-name (buffer-file-name)))
              (backend-name (symbol-name (car backend-info))))
 
-        (deno-bridge-start "pandoc-preview" ts)
-
-        (pandoc-preview--wait-for-connection 5)
+        (unless (member "pandoc-preview" deno-bridge-app-list)
+          (deno-bridge-start "pandoc-preview" (pandoc-preview--ts)))
 
         (deno-bridge-call "pandoc-preview" "init"
                           pandoc-preview--root file-abs backend-name)
@@ -320,7 +301,3 @@ Returns a list of lists, each inner list is (EXE ARG...)."
 
 (provide 'pandoc-preview)
 ;;; pandoc-preview.el ends here
-
-;; Local Variables:
-;; byte-compile-warnings: (not free-vars unresolved lexical noruntime)
-;; End:
