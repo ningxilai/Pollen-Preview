@@ -133,17 +133,19 @@ Returns (BACKEND-NAME . PLIST)."
 (defun pandoc-preview--build-commands (backend-plist in-file)
   "Build command list from BACKEND-PLIST for IN-FILE.
 Replaces {in} with IN-FILE and {out} with IN-FILE with .html extension.
-Returns a list of lists, each inner list is (EXE ARG...)."
+Returns a vector of vectors for proper JSON encoding."
   (let* ((out-file (concat (file-name-sans-extension in-file) ".html"))
          (raw-commands (plist-get backend-plist :commands)))
-    (mapcar (lambda (cmd)
-              (mapcar (lambda (arg)
-                        (pcase arg
-                          ("{in}" in-file)
-                          ("{out}" out-file)
-                          (_ arg)))
-                      cmd))
-            raw-commands)))
+    (vconcat
+     (mapcar (lambda (cmd)
+               (vconcat
+                (mapcar (lambda (arg)
+                          (pcase arg
+                            ("{in}" in-file)
+                            ("{out}" out-file)
+                            (_ arg)))
+                        cmd)))
+             raw-commands))))
 
 (defun pandoc-preview--open-browser (url)
   (cond
@@ -233,9 +235,6 @@ Returns a list of lists, each inner list is (EXE ARG...)."
           (deno-bridge-start "pandoc-preview" (pandoc-preview--ts)))
 
         (pandoc-preview--wait-for-connection 10)
-
-        (message "[pandoc-preview] debug: backend-plist=%S commands=%S watch-rx=%S"
-                 backend-plist commands watch-rx)
 
         (deno-bridge-call "pandoc-preview" "init"
                           pandoc-preview--root file-abs backend-name)

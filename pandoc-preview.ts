@@ -36,7 +36,6 @@ async function messageDispatcher(message: string) {
       case "init": {
         rootDir = args[0] as string
         filePath = args[1] as string
-        log(`init: rootDir=${rootDir} file=${filePath}`)
         const hash = Array.from(
           new Uint8Array(
             await crypto.subtle.digest(
@@ -50,28 +49,19 @@ async function messageDispatcher(message: string) {
           .slice(0, 12)
         tempDir = join(sessionDir, hash)
         await ensureDir(tempDir)
-        log(`tempDir=${tempDir}`)
         for await (const entry of Deno.readDir(rootDir)) {
           if (entry.name.startsWith(".")) continue
           try {
             await ensureSymlink(join(rootDir, entry.name), join(tempDir, entry.name))
-          } catch (e) {
-            log(`symlink error: ${entry.name} ${(e as Error).message}`)
-          }
+          } catch {}
         }
         break
       }
       case "render": {
-        log(`render: args[0]=${args[0]}, args[1]=${args[1]}`)
         renderArgs = JSON.parse(args[0] as string) as string[][]
         watchRx = new RegExp(args[1] as string)
-        log(`render: renderArgs=${JSON.stringify(renderArgs)}`)
+        log(`render: ${renderArgs.length} command(s)`)        
         await doRender()
-        const files: string[] = []
-        for await (const entry of Deno.readDir(tempDir)) {
-          files.push(entry.name)
-        }
-        log(`render done, files: ${files.join(", ")}`)
         startWatcher()
         httpServer = Deno.serve({ port: 0, hostname: "127.0.0.1" }, httpHandler)
         const addr = httpServer.addr as Deno.NetAddr
@@ -149,10 +139,8 @@ async function doRender() {
   try {
     for (const args of renderArgs) {
       if (!Array.isArray(args) || args.length === 0) continue
-      log(`run: ${args.join(" ")} in ${tempDir}`)
       const { success, stderr } = await runCmd(args[0], args.slice(1), tempDir)
       if (!success) {
-        log(`render error: ${stderr}`)
         bridge.evalInEmacs(
           `(pandoc-preview--on-render-error ${JSON.stringify(stderr.split("\n").pop() || stderr)})`,
         )
@@ -163,7 +151,7 @@ async function doRender() {
     renderVersion++
     await Deno.writeTextFile(join(tempDir, ".render-version"), String(renderVersion))
   } catch (e) {
-    log(`doRender exception: ${(e as Error).message}`)
+    log(`render error: ${(e as Error).message}`)
   }
   rendering = false
   if (renderPending) doRender()
@@ -214,20 +202,6 @@ async function httpHandler(req: Request): Promise<Response> {
     return new Response(String(renderVersion), {
       headers: { "Cache-Control": "no-cache" },
     })
-  if (path === "/__debug") {
-    const files: string[] = []
-    try {
-      for await (const entry of Deno.readDir(tempDir)) {
-        files.push(entry.name)
-      }
-    } catch (e) {
-      return new Response(`Error reading tempDir: ${(e as Error).message}`, { headers: { "Content-Type": "text/plain" } })
-    }
-    return new Response(
-      `tempDir: ${tempDir}\nfilePath: ${filePath}\nrootDir: ${rootDir}\nfiles: ${files.join(", ")}`,
-      { headers: { "Content-Type": "text/plain" } }
-    )
-  }
   const base = basename(filePath).replace(/\.\w+$/, "")
   const cands =
     path === "/"
@@ -236,7 +210,6 @@ async function httpHandler(req: Request): Promise<Response> {
   for (const c of cands) {
     try {
       let content = await Deno.readTextFile(join(tempDir, c))
-      log(`http: ${path} -> ${c}`)
       if (c.endsWith(".html") || !c.includes(".")) {
         content = content
           .replace(/<\/?root>/g, "")
@@ -256,6 +229,5 @@ async function httpHandler(req: Request): Promise<Response> {
       })
     } catch {}
   }
-  log(`http: ${path} NOT FOUND (tried: ${cands.join(", ")})`)
   return new Response("Not found", { status: 404 })
 }
