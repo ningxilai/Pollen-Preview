@@ -32,6 +32,7 @@ async function messageDispatcher(message: string) {
       case "init": {
         rootDir = args[0] as string
         filePath = args[1] as string
+        console.error(`[pandoc-preview] init: rootDir=${rootDir}, filePath=${filePath}`)
         const hash = Array.from(
           new Uint8Array(
             await crypto.subtle.digest(
@@ -56,7 +57,12 @@ async function messageDispatcher(message: string) {
       case "render": {
         renderArgs = JSON.parse(args[0] as string) as string[][]
         watchRx = new RegExp(args[1] as string)
+        console.error(`[pandoc-preview] render: tempDir=${tempDir}, renderArgs=${JSON.stringify(renderArgs)}`)
         await doRender()
+        console.error(`[pandoc-preview] render done, listing tempDir:`)
+        for await (const entry of Deno.readDir(tempDir)) {
+          console.error(`  - ${entry.name}`)
+        }
         startWatcher()
         httpServer = Deno.serve({ port: 0, hostname: "127.0.0.1" }, httpHandler)
         const addr = httpServer.addr as Deno.NetAddr
@@ -200,9 +206,11 @@ async function httpHandler(req: Request): Promise<Response> {
     path === "/"
       ? [base + ".html", base, "index.html"]
       : [path, path + ".html", path.slice(0, -5)]
+  console.error(`[pandoc-preview] http: path=${path}, base=${base}, cands=${JSON.stringify(cands)}, tempDir=${tempDir}`)
   for (const c of cands) {
     try {
       let content = await Deno.readTextFile(join(tempDir, c))
+      console.error(`[pandoc-preview] http: found ${c}`)
       if (c.endsWith(".html") || !c.includes(".")) {
         content = content
           .replace(/<\/?root>/g, "")
