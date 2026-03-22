@@ -19,8 +19,8 @@
 
 ;; Suppress warnings from deno-bridge
 (defvar emacs-conductor-enable-debug)
-(with-no-warnings
-  (load "deno-bridge" nil t))
+(let ((byte-compile-warnings nil))
+  (require 'deno-bridge))
 (require 'json)
 (require 'cl-lib)
 (require 'project)
