@@ -22,7 +22,6 @@
 (require 'cl-lib)
 (require 'project)
 
-(defvar pandoc-preview--ts-path nil)
 (defvar pandoc-preview--root nil)
 (defvar pandoc-preview--port nil)
 (defvar pandoc-preview--active-buffers nil)
@@ -103,12 +102,12 @@ Example custom backend:
 ;;; Internal functions
 
 (defun pandoc-preview--ts ()
-  (or pandoc-preview--ts-path
-      (expand-file-name "pandoc-preview.ts"
-                        (or (and load-file-name (file-name-directory load-file-name))
-                            (and (locate-library "pandoc-preview")
-                                 (file-name-directory (locate-library "pandoc-preview")))
-                            (and buffer-file-name (file-name-directory buffer-file-name))))))
+  "Return path to pandoc-preview.ts."
+  (expand-file-name "pandoc-preview.ts"
+                    (or (and load-file-name (file-name-directory load-file-name))
+                        (and (locate-library "pandoc-preview")
+                             (file-name-directory (locate-library "pandoc-preview")))
+                        (and buffer-file-name (file-name-directory buffer-file-name)))))
 
 (defun pandoc-preview--supported-file-p (&optional buf)
   "Non-nil if BUF (default current) visits a supported file."
@@ -232,7 +231,7 @@ Returns a vector of vectors for proper JSON encoding."
              (backend-name (symbol-name (car backend-info))))
 
         (unless (member "pandoc-preview" deno-bridge-app-list)
-          (deno-bridge-start "pandoc-preview" (pandoc-preview--ts)))
+          (deno-bridge-start "pandoc-preview" ts))
 
         (pandoc-preview--wait-for-connection 10)
 

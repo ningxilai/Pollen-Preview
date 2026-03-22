@@ -24,10 +24,6 @@ let renderVersion = 0
 let watcher: Deno.FsWatcher | null = null
 let httpServer: Deno.HttpServer | null = null
 
-function log(msg: string) {
-  bridge.evalInEmacs(`(message "[pandoc-preview] ${msg.replace(/"/g, '\\"')}")`)
-}
-
 async function messageDispatcher(message: string) {
   try {
     const parsed = JSON.parse(message)
@@ -60,7 +56,6 @@ async function messageDispatcher(message: string) {
       case "render": {
         renderArgs = JSON.parse(args[0] as string) as string[][]
         watchRx = new RegExp(args[1] as string)
-        log(`render: ${renderArgs.length} command(s)`)        
         await doRender()
         startWatcher()
         httpServer = Deno.serve({ port: 0, hostname: "127.0.0.1" }, httpHandler)
@@ -84,9 +79,7 @@ async function messageDispatcher(message: string) {
         break
       }
     }
-  } catch (e) {
-    log(`error: ${(e as Error).message}`)
-  }
+  } catch {}
 }
 
 async function cleanup() {
@@ -150,9 +143,7 @@ async function doRender() {
     }
     renderVersion++
     await Deno.writeTextFile(join(tempDir, ".render-version"), String(renderVersion))
-  } catch (e) {
-    log(`render error: ${(e as Error).message}`)
-  }
+  } catch {}
   rendering = false
   if (renderPending) doRender()
 }
