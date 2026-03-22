@@ -78,7 +78,7 @@
                  "-o" "{out}"))
      :watch "\\.\\(adoc\\|asciidoc\\)$")
     ("\\.typ\\'"
-     :commands (("typst" "compile" "{in}" "{out}"))
+     :commands (("typst" "compile" "--features" "html" "{in}" "{out}"))
      :watch "\\.typ$"))
   "Alist of (REGEXP . PLIST) mapping file extensions to render specs.
 
