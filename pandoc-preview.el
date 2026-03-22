@@ -184,6 +184,19 @@ Returns a list of lists, each inner list is (EXE ARG...)."
 
 ;;; Deno callback functions
 
+(defun pandoc-preview--wait-for-connection (timeout)
+  "Wait up to TIMEOUT seconds for deno-bridge connection to be established."
+  (let ((client-sym (intern-soft "deno-bridge-client-pandoc-preview"))
+        (deadline (+ (float-time) timeout)))
+    (while (and (< (float-time) deadline)
+                (or (null client-sym)
+                    (null (symbol-value client-sym))))
+      (sleep-for 0.05)
+      (setq client-sym (intern-soft "deno-bridge-client-pandoc-preview")))
+    (when (or (null client-sym)
+              (null (symbol-value client-sym)))
+      (error "[pandoc-preview] Deno bridge connection timeout"))))
+
 (defun pandoc-preview--on-server-ready (port)
   "Called by Deno when HTTP server is ready on PORT."
   (setq pandoc-preview--port port)
@@ -218,6 +231,8 @@ Returns a list of lists, each inner list is (EXE ARG...)."
 
         (unless (member "pandoc-preview" deno-bridge-app-list)
           (deno-bridge-start "pandoc-preview" (pandoc-preview--ts)))
+
+        (pandoc-preview--wait-for-connection 10)
 
         (deno-bridge-call "pandoc-preview" "init"
                           pandoc-preview--root file-abs backend-name)
