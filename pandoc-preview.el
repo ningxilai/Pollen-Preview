@@ -2,7 +2,7 @@
 
 ;; Version: 0.4
 ;; Package-Requires: ((emacs "28.1") (deno-bridge "0.1"))
-;; Keywords: preview, pandoc, pollen, markdown
+;; Keywords: preview pandoc pollen markdown
 
 ;;; Commentary:
 
