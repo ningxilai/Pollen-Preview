@@ -1,8 +1,8 @@
-;;; pandoc-preview.el --- Live preview for documents via browser -*- lexical-binding: t; byte-compile-warnings: nil; -*-
+;;; pandoc-preview.el --- Live preview for documents via browser -*- lexical-binding: t; -*-
 
 ;; Version: 0.4
-;; Package-Requires: ((emacs "28.1") (deno-bridge "0.1"))
-;; Keywords: preview pandoc pollen markdown
+;; Package-Requires: ((emacs "28.1"))
+;; Keywords: preview, pandoc, pollen, markdown
 
 ;;; Commentary:
 
@@ -67,19 +67,11 @@
                  "--standalone" "--mathjax" "--highlight-style=tango"
                  "-o" "{out}"))
      :watch "\\.rst$")
-    ("\\.\\(tex\\|latex\\)\\'"
-     :commands (("pandoc" "{in}" "-f" "latex" "-t" "html5"
-                 "--standalone" "--mathjax" "--highlight-style=tango"
-                 "-o" "{out}"))
-     :watch "\\.\\(tex\\|latex\\)$")
     ("\\.\\(adoc\\|asciidoc\\)\\'"
      :commands (("pandoc" "{in}" "-f" "asciidoc" "-t" "html5"
                  "--standalone" "--mathjax" "--highlight-style=tango"
                  "-o" "{out}"))
-     :watch "\\.\\(adoc\\|asciidoc\\)$")
-    ("\\.typ\\'"
-     :commands (("typst" "compile" "--features" "html" "{in}" "{out}"))
-     :watch "\\.typ$"))
+     :watch "\\.\\(adoc\\|asciidoc\\)$"))
   "Alist of (REGEXP . PLIST) mapping file extensions to render specs.
 
 PLIST keys:
@@ -316,4 +308,5 @@ Returns a vector of vectors for proper JSON encoding."
   (if pandoc-preview-mode (pandoc-preview-start) (pandoc-preview-stop)))
 
 (provide 'pandoc-preview)
-;;; pandoc-preview.el ends here
+
+;;; ekp.el ends here
